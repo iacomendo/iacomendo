@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Wrapper do narrar.py: injeta ELEVENLABS_API_KEY (via .env, gitignorado) e o
+# caminho do ffmpeg estático user-space. Repassa todos os argumentos ao script.
+#
+# Uso:
+#   scripts/narra --voz vitoria --tom empolgada --arquivo copy.txt --saida out.mp3
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# 1. carrega .env se existir (nunca versionado)
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
+# 2. localiza ffmpeg (user-space tem prioridade)
+if [[ -z "${FFMPEG_BIN:-}" ]]; then
+  if [[ -x "$HOME/.local/bin/ffmpeg" ]]; then
+    export FFMPEG_BIN="$HOME/.local/bin/ffmpeg"
+  else
+    export FFMPEG_BIN="ffmpeg"
+  fi
+fi
+
+if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
+  echo "ERRO: ELEVENLABS_API_KEY não definida. Crie um .env a partir de .env.example." >&2
+  exit 2
+fi
+
+exec python3 "$ROOT/scripts/narrar.py" "$@"

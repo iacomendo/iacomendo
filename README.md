@@ -103,3 +103,21 @@ Como todo acesso passa por `comendo_db.py`, migrar SQLite → Postgres é trocar
   de desligar o stack local.
 
 Detalhe do que o produto final precisa cobrir: `docs/HANDOFF.md` §11.
+
+---
+
+## Sistema de Narração por IA (ElevenLabs)
+
+Subprojeto separado deste repositório: transforma **copy pronta do time** em
+**narração com voz humana clonada** (ElevenLabs), para vídeos de onboarding e
+campanhas de captação.
+
+- Motor e uso: `scripts/narrar.py` / wrapper `scripts/narra`
+- Comando guiado: `/narra-onboarding` (`.claude/skills/narra-onboarding/`)
+- Visão geral: [`docs/NARRACAO.md`](docs/NARRACAO.md)
+- Handoff completo: [`docs/HANDOFF-NARRACAO.md`](docs/HANDOFF-NARRACAO.md)
+- Guia do time (chat de uso): [`docs/GUIA-OPERADOR.md`](docs/GUIA-OPERADOR.md)
+- Migração de conta ElevenLabs: [`docs/MIGRACAO-CONTA.md`](docs/MIGRACAO-CONTA.md)
+
+Toda sessão nova na web se auto-prepara (instala ffmpeg, valida a chave) via o
+hook em `.claude/hooks/session-start.sh`.
