@@ -18,6 +18,12 @@ Schema:
                          de estilo de mensagem editáveis pelo gestor.
   mensagens_pendentes — rascunhos gerados em "modo revisão", esperando o gestor
                          editar/aprovar antes do envio real pelo painel.
+
+Backend: SQLite (padrão, arquivo local) ou Postgres (quando config.DATABASE_URL
+está definida — usado no rebuild pra nuvem). Toda a API pública (as funções
+abaixo) se comporta igual nos dois backends; só a função `conectar()` e um
+punhado de helpers internos (`_sql`, `_inserir_e_pegar_id`, `_order_nocase`)
+sabem a diferença. Ver README.md §Banco de dados / migrar_para_postgres.py.
 """
 
 import os
@@ -25,17 +31,32 @@ import re
 import csv
 import sys
 import json
-import sqlite3
 import unicodedata
 import datetime
 
 import config
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Backend ativo: Postgres quando DATABASE_URL está definida, senão SQLite.
+_USANDO_POSTGRES = bool(config.DATABASE_URL)
+
+if _USANDO_POSTGRES:
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except ImportError as e:
+        raise RuntimeError(
+            "DATABASE_URL está definida (backend Postgres) mas o pacote "
+            "'psycopg' não está instalado. Rode: pip install 'psycopg[binary]' "
+            "(já está em requirements.txt)."
+        ) from e
+else:
+    import sqlite3
+
 # Caminho do SQLite: configurável via DB_PATH (env). Se não definido, usa
-# clientes.db ao lado deste módulo, como sempre foi.
-# NOTA: na migração pra nuvem, este arquivo ganha um backend Postgres quando
-# config.DATABASE_URL estiver definida (ver README, Fase 2). Por ora, SQLite.
+# clientes.db ao lado deste módulo, como sempre foi. Só é usado quando o
+# backend ativo é SQLite (DATABASE_URL ausente).
 DB_PATH = config.DB_PATH or os.path.join(BASE_DIR, "clientes.db")
 
 FLUXOS = ("dashgoo", "meta_ads")
@@ -45,70 +66,172 @@ def _agora():
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+# =====================================================================
+# Conexão e helpers de compatibilidade entre backends
+# =====================================================================
+# As queries no resto do arquivo são escritas no estilo SQLite (placeholder
+# `?`). _sql() converte pra `%s` quando o backend é Postgres — assim existe
+# uma única versão de cada query pros dois bancos, em vez de duplicar tudo.
+
+def _sql(query):
+    return query.replace("?", "%s") if _USANDO_POSTGRES else query
+
+
 def conectar():
+    if _USANDO_POSTGRES:
+        return psycopg.connect(config.DATABASE_URL, row_factory=dict_row)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     return con
 
 
+def _executar(con, query, params=()):
+    """con.execute() com o placeholder certo pro backend ativo. Use isto (em
+    vez de con.execute direto) em toda query nova escrita no estilo `?`."""
+    return con.execute(_sql(query), params)
+
+
+def _inserir_e_pegar_id(con, query, params):
+    """Executa um INSERT e devolve o id da linha criada — via cursor.lastrowid
+    no SQLite, via `RETURNING id` no Postgres (psycopg não tem lastrowid)."""
+    if _USANDO_POSTGRES:
+        cur = con.execute(_sql(query) + " RETURNING id", params)
+        row = cur.fetchone()
+        return row["id"] if isinstance(row, dict) else row[0]
+    cur = con.execute(query, params)
+    return cur.lastrowid
+
+
+def _order_nocase(*cols):
+    """Fragmento de ORDER BY case-insensitive. SQLite usa a collation NOCASE
+    (não existe em Postgres); Postgres usa LOWER() nas colunas."""
+    if _USANDO_POSTGRES:
+        return ", ".join(f"LOWER({c})" for c in cols)
+    return ", ".join(f"{c} COLLATE NOCASE" for c in cols)
+
+
+# =====================================================================
+# Schema (DDL) — uma versão por backend
+# =====================================================================
+
+_DDL_SQLITE = """
+CREATE TABLE IF NOT EXISTS clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    gestor TEXT NOT NULL,
+    instancia TEXT NOT NULL,
+    grupo_nome TEXT NOT NULL,
+    grupo_id TEXT NOT NULL,
+    fluxo TEXT NOT NULL CHECK(fluxo IN ('dashgoo','meta_ads')),
+    ad_account_id TEXT,
+    status TEXT NOT NULL DEFAULT 'OK',
+    saudacao_padrao TEXT,
+    estilo_mensagem TEXT,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gestores (
+    instancia TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    numero TEXT,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS envios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+    periodo TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('enviado','erro','sem_trafego','descartado')),
+    detalhe TEXT,
+    criado_em TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_envios_cliente ON envios(cliente_id, criado_em);
+
+CREATE TABLE IF NOT EXISTS mensagens_pendentes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+    periodo TEXT NOT NULL,
+    saudacao TEXT NOT NULL,
+    metricas TEXT NOT NULL,
+    conclusao TEXT,
+    pdf_path TEXT,
+    status TEXT NOT NULL DEFAULT 'pendente',
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_clientes_fluxo ON clientes(fluxo);
+CREATE INDEX IF NOT EXISTS idx_pendentes_status ON mensagens_pendentes(status);
+"""
+
+# Mesmo schema, dialeto Postgres: SERIAL no lugar de INTEGER AUTOINCREMENT.
+# CHECK, REFERENCES ON DELETE CASCADE e CREATE INDEX IF NOT EXISTS são
+# idênticos nos dois bancos.
+_DDL_POSTGRES = """
+CREATE TABLE IF NOT EXISTS clientes (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    gestor TEXT NOT NULL,
+    instancia TEXT NOT NULL,
+    grupo_nome TEXT NOT NULL,
+    grupo_id TEXT NOT NULL,
+    fluxo TEXT NOT NULL CHECK(fluxo IN ('dashgoo','meta_ads')),
+    ad_account_id TEXT,
+    status TEXT NOT NULL DEFAULT 'OK',
+    saudacao_padrao TEXT,
+    estilo_mensagem TEXT,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gestores (
+    instancia TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    numero TEXT,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS envios (
+    id SERIAL PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+    periodo TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('enviado','erro','sem_trafego','descartado')),
+    detalhe TEXT,
+    criado_em TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_envios_cliente ON envios(cliente_id, criado_em);
+
+CREATE TABLE IF NOT EXISTS mensagens_pendentes (
+    id SERIAL PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+    periodo TEXT NOT NULL,
+    saudacao TEXT NOT NULL,
+    metricas TEXT NOT NULL,
+    conclusao TEXT,
+    pdf_path TEXT,
+    status TEXT NOT NULL DEFAULT 'pendente',
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_clientes_fluxo ON clientes(fluxo);
+CREATE INDEX IF NOT EXISTS idx_pendentes_status ON mensagens_pendentes(status);
+"""
+
+
 def inicializar():
     """Cria as tabelas se não existirem. Idempotente — seguro chamar sempre."""
     con = conectar()
-    con.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS clientes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            gestor TEXT NOT NULL,
-            instancia TEXT NOT NULL,
-            grupo_nome TEXT NOT NULL,
-            grupo_id TEXT NOT NULL,
-            fluxo TEXT NOT NULL CHECK(fluxo IN ('dashgoo','meta_ads')),
-            ad_account_id TEXT,
-            status TEXT NOT NULL DEFAULT 'OK',
-            saudacao_padrao TEXT,
-            estilo_mensagem TEXT,
-            criado_em TEXT NOT NULL,
-            atualizado_em TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS gestores (
-            instancia TEXT PRIMARY KEY,
-            nome TEXT NOT NULL,
-            numero TEXT,
-            criado_em TEXT NOT NULL,
-            atualizado_em TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS envios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
-            periodo TEXT NOT NULL,
-            status TEXT NOT NULL CHECK(status IN ('enviado','erro','sem_trafego','descartado')),
-            detalhe TEXT,
-            criado_em TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_envios_cliente ON envios(cliente_id, criado_em);
-
-        CREATE TABLE IF NOT EXISTS mensagens_pendentes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
-            periodo TEXT NOT NULL,
-            saudacao TEXT NOT NULL,
-            metricas TEXT NOT NULL,
-            conclusao TEXT,
-            pdf_path TEXT,
-            status TEXT NOT NULL DEFAULT 'pendente',
-            criado_em TEXT NOT NULL,
-            atualizado_em TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_clientes_fluxo ON clientes(fluxo);
-        CREATE INDEX IF NOT EXISTS idx_pendentes_status ON mensagens_pendentes(status);
-        """
-    )
+    if _USANDO_POSTGRES:
+        con.execute(_DDL_POSTGRES)
+    else:
+        con.executescript(_DDL_SQLITE)
     con.commit()
     con.close()
 
@@ -138,15 +261,15 @@ def listar_clientes(fluxo=None, status=None, gestor=None):
         args.append(gestor)
     if cond:
         q += " WHERE " + " AND ".join(cond)
-    q += " ORDER BY gestor COLLATE NOCASE, nome COLLATE NOCASE"
-    linhas = [dict(r) for r in con.execute(q, args).fetchall()]
+    q += " ORDER BY " + _order_nocase("gestor", "nome")
+    linhas = [dict(r) for r in _executar(con, q, args).fetchall()]
     con.close()
     return linhas
 
 
 def buscar_cliente(id_):
     con = conectar()
-    r = con.execute("SELECT * FROM clientes WHERE id = ?", (id_,)).fetchone()
+    r = _executar(con, "SELECT * FROM clientes WHERE id = ?", (id_,)).fetchone()
     con.close()
     return dict(r) if r else None
 
@@ -168,7 +291,8 @@ def inserir_cliente(nome, gestor, instancia, grupo_nome, grupo_id, fluxo,
         raise ValueError(f"fluxo inválido: {fluxo}")
     con = conectar()
     agora = _agora()
-    cur = con.execute(
+    novo_id = _inserir_e_pegar_id(
+        con,
         """INSERT INTO clientes
            (nome, gestor, instancia, grupo_nome, grupo_id, fluxo, ad_account_id,
             status, saudacao_padrao, estilo_mensagem, criado_em, atualizado_em)
@@ -177,7 +301,6 @@ def inserir_cliente(nome, gestor, instancia, grupo_nome, grupo_id, fluxo,
          status, saudacao_padrao, estilo_mensagem, agora, agora),
     )
     con.commit()
-    novo_id = cur.lastrowid
     con.close()
     return novo_id
 
@@ -191,14 +314,14 @@ def atualizar_cliente(id_, **campos):
     campos["atualizado_em"] = _agora()
     sets = ", ".join(f"{k} = ?" for k in campos)
     con = conectar()
-    con.execute(f"UPDATE clientes SET {sets} WHERE id = ?", (*campos.values(), id_))
+    _executar(con, f"UPDATE clientes SET {sets} WHERE id = ?", (*campos.values(), id_))
     con.commit()
     con.close()
 
 
 def excluir_cliente(id_):
     con = conectar()
-    con.execute("DELETE FROM clientes WHERE id = ?", (id_,))
+    _executar(con, "DELETE FROM clientes WHERE id = ?", (id_,))
     con.commit()
     con.close()
 
@@ -211,7 +334,8 @@ def registrar_envio(cliente_id, periodo, status, detalhe=None):
     if status not in ("enviado", "erro", "sem_trafego", "descartado"):
         raise ValueError(f"status inválido: {status}")
     con = conectar()
-    con.execute(
+    _executar(
+        con,
         "INSERT INTO envios (cliente_id, periodo, status, detalhe, criado_em) VALUES (?,?,?,?,?)",
         (cliente_id, periodo, status, detalhe, _agora()),
     )
@@ -223,9 +347,10 @@ def listar_ultimos_envios():
     """Devolve {cliente_id: {periodo, status, detalhe, criado_em}} — só o
     envio mais recente de cada cliente (pro badge visual no painel)."""
     con = conectar()
-    linhas = con.execute(
+    linhas = _executar(
+        con,
         """SELECT cliente_id, periodo, status, detalhe, criado_em FROM envios e
-           WHERE criado_em = (SELECT MAX(criado_em) FROM envios WHERE cliente_id = e.cliente_id)"""
+           WHERE criado_em = (SELECT MAX(criado_em) FROM envios WHERE cliente_id = e.cliente_id)""",
     ).fetchall()
     con.close()
     return {r["cliente_id"]: dict(r) for r in linhas}
@@ -233,7 +358,8 @@ def listar_ultimos_envios():
 
 def historico_envios(cliente_id, limite=10):
     con = conectar()
-    linhas = [dict(r) for r in con.execute(
+    linhas = [dict(r) for r in _executar(
+        con,
         "SELECT * FROM envios WHERE cliente_id = ? ORDER BY criado_em DESC LIMIT ?",
         (cliente_id, limite),
     ).fetchall()]
@@ -251,15 +377,17 @@ def upsert_gestor(instancia, nome, numero=None):
     novo (ex: cadastro de cliente) sem apagar um número já salvo."""
     con = conectar()
     agora = _agora()
-    existente = con.execute("SELECT numero FROM gestores WHERE instancia = ?", (instancia,)).fetchone()
+    existente = _executar(con, "SELECT numero FROM gestores WHERE instancia = ?", (instancia,)).fetchone()
     if existente:
         novo_numero = numero if numero else existente["numero"]
-        con.execute(
+        _executar(
+            con,
             "UPDATE gestores SET nome = ?, numero = ?, atualizado_em = ? WHERE instancia = ?",
             (nome, novo_numero, agora, instancia),
         )
     else:
-        con.execute(
+        _executar(
+            con,
             "INSERT INTO gestores (instancia, nome, numero, criado_em, atualizado_em) VALUES (?,?,?,?,?)",
             (instancia, nome, numero, agora, agora),
         )
@@ -272,14 +400,16 @@ def definir_numero_gestor(instancia, nome, numero):
     quando o usuário está explicitamente editando/limpando o número."""
     con = conectar()
     agora = _agora()
-    existente = con.execute("SELECT 1 FROM gestores WHERE instancia = ?", (instancia,)).fetchone()
+    existente = _executar(con, "SELECT 1 FROM gestores WHERE instancia = ?", (instancia,)).fetchone()
     if existente:
-        con.execute(
+        _executar(
+            con,
             "UPDATE gestores SET nome = ?, numero = ?, atualizado_em = ? WHERE instancia = ?",
             (nome, numero, agora, instancia),
         )
     else:
-        con.execute(
+        _executar(
+            con,
             "INSERT INTO gestores (instancia, nome, numero, criado_em, atualizado_em) VALUES (?,?,?,?,?)",
             (instancia, nome, numero, agora, agora),
         )
@@ -289,14 +419,15 @@ def definir_numero_gestor(instancia, nome, numero):
 
 def buscar_gestor(instancia):
     con = conectar()
-    r = con.execute("SELECT * FROM gestores WHERE instancia = ?", (instancia,)).fetchone()
+    r = _executar(con, "SELECT * FROM gestores WHERE instancia = ?", (instancia,)).fetchone()
     con.close()
     return dict(r) if r else None
 
 
 def listar_gestores():
     con = conectar()
-    linhas = [dict(r) for r in con.execute("SELECT * FROM gestores ORDER BY nome COLLATE NOCASE").fetchall()]
+    q = "SELECT * FROM gestores ORDER BY " + _order_nocase("nome")
+    linhas = [dict(r) for r in _executar(con, q).fetchall()]
     con.close()
     return linhas
 
@@ -308,14 +439,14 @@ def listar_gestores():
 def inserir_pendente(cliente_id, periodo, saudacao, metricas, conclusao=None, pdf_path=None):
     con = conectar()
     agora = _agora()
-    cur = con.execute(
+    novo_id = _inserir_e_pegar_id(
+        con,
         """INSERT INTO mensagens_pendentes
            (cliente_id, periodo, saudacao, metricas, conclusao, pdf_path, status, criado_em, atualizado_em)
            VALUES (?,?,?,?,?,?, 'pendente', ?, ?)""",
         (cliente_id, periodo, saudacao, metricas, conclusao, pdf_path, agora, agora),
     )
     con.commit()
-    novo_id = cur.lastrowid
     con.close()
     return novo_id
 
@@ -330,7 +461,7 @@ def listar_pendentes(status="pendente", fluxo=None):
         q += " AND c.fluxo = ?"
         args.append(fluxo)
     q += " ORDER BY mp.criado_em"
-    linhas = [dict(r) for r in con.execute(q, args).fetchall()]
+    linhas = [dict(r) for r in _executar(con, q, args).fetchall()]
     con.close()
     return linhas
 
@@ -345,7 +476,7 @@ def atualizar_pendente(id_, **campos):
     campos["atualizado_em"] = _agora()
     sets = ", ".join(f"{k} = ?" for k in campos)
     con = conectar()
-    con.execute(f"UPDATE mensagens_pendentes SET {sets} WHERE id = ?", (*campos.values(), id_))
+    _executar(con, f"UPDATE mensagens_pendentes SET {sets} WHERE id = ?", (*campos.values(), id_))
     con.commit()
     con.close()
 
@@ -477,7 +608,8 @@ def _cli():
 
     if args.comando == "init":
         inicializar()
-        print("OK: tabelas prontas em", DB_PATH)
+        destino = config.DATABASE_URL if _USANDO_POSTGRES else DB_PATH
+        print("OK: tabelas prontas em", destino)
     elif args.comando == "migrar":
         nd, nm, ns = migrar_de_csv()
         print(f"OK: {nd} clientes dashgoo, {nm} clientes meta_ads migrados, {ns} já existiam (pulados).")

@@ -70,7 +70,8 @@ pra produção, porque já circularam. Ver `docs/HANDOFF.md` §10.
 | Arquivo | O que é |
 |---|---|
 | `config.py` | configuração central (env vars) |
-| `comendo_db.py` | camada de dados — a **única** porta pro banco (CRUD + CLI) |
+| `comendo_db.py` | camada de dados — a **única** porta pro banco (CRUD + CLI); backend SQLite ou Postgres |
+| `migrar_para_postgres.py` | migra os dados do `clientes.db` local para o Postgres de destino |
 | `relatorios_automacao.py` | fluxo Dashgoo: Gmail → PDF → Claude → Drive → WhatsApp |
 | `enviar_ads.py` | envio do fluxo Meta Ads direto |
 | `painel.py` | painel web (cadastro, fila de revisão, disparo manual) |
@@ -79,8 +80,41 @@ pra produção, porque já circularam. Ver `docs/HANDOFF.md` §10.
 | `adicionar_cliente.py`, `listar_grupos*.py`, `pegar_id_grupo.py` | utilitários |
 
 O banco tem 4 tabelas: `clientes`, `gestores`, `envios`, `mensagens_pendentes`.
-Como todo acesso passa por `comendo_db.py`, migrar SQLite → Postgres é trocar
-**um** arquivo, sem tocar no resto.
+Como todo acesso passa por `comendo_db.py`, o backend é escolhido em runtime:
+**SQLite** (padrão, `DB_PATH`) quando `DATABASE_URL` está ausente, **Postgres**
+quando está definida. O resto do código (painel, automação, CLI) não muda —
+usa as mesmas funções (`listar_clientes`, `inserir_cliente`, etc.) nos dois casos.
+
+### Banco de dados — SQLite → Postgres
+
+Pra migrar o `clientes.db` local para um Postgres (ex.: Supabase):
+
+```bash
+export DATABASE_URL=postgresql://usuario:senha@host:5432/banco
+
+# 1. Confira o que seria migrado, sem gravar nada:
+python3 migrar_para_postgres.py --sqlite-path clientes.db --dry-run
+
+# 2. Rode de verdade:
+python3 migrar_para_postgres.py --sqlite-path clientes.db
+```
+
+O script cria o schema no Postgres (se não existir), copia `clientes`,
+`gestores`, `envios` e `mensagens_pendentes` **preservando os ids originais**
+(essencial pra manter as referências `cliente_id` de `envios`/
+`mensagens_pendentes` intactas) e ajusta as sequences pro próximo id
+automático não colidir. É idempotente — rodar de novo só pula quem já existe,
+não duplica.
+
+Depois de migrado, basta manter `DATABASE_URL` definida nas variáveis de
+ambiente de produção — `comendo_db.py` passa a usar o Postgres automaticamente,
+sem nenhuma mudança de código em `painel.py`/`relatorios_automacao.py`/
+`enviar_ads.py`.
+
+**Validado nesta entrega:** schema, CRUD completo, CLI, cascade delete,
+idempotência e integridade referencial testados contra Postgres 16 real (não
+só SQLite), incluindo uma migração completa dos 82 clientes / 122 envios do
+`clientes.db` de produção atual, com verificação de zero referências órfãs.
 
 ---
 
@@ -90,9 +124,12 @@ Como todo acesso passa por `comendo_db.py`, migrar SQLite → Postgres é trocar
   configuração externalizada em env vars (`config.py`); segredos protegidos
   (`.gitignore`); `EVOLUTION_URL` e credenciais Google já preparados para
   URL pública / env. *(esta entrega)*
-- [ ] **Fase 2 — Banco na nuvem.** `comendo_db.py` ganha backend Postgres
-  quando `DATABASE_URL` estiver definida; migração do schema + dados do
-  `clientes.db` atual para o Postgres gerenciado (Supabase).
+- [x] **Fase 2 — Banco na nuvem.** `comendo_db.py` ganha backend Postgres
+  quando `DATABASE_URL` estiver definida (mesma API pública, SQLite e Postgres
+  lado a lado); `migrar_para_postgres.py` migra o `clientes.db` atual
+  preservando ids e integridade referencial. *(esta entrega — falta apenas
+  provisionar o Postgres real de destino, ex. Supabase, e rodar a migração
+  contra ele — ver §Externo pendente)*
 - [ ] **Fase 3 — Ingestão Dashgoo.** Gmail por API no backend (ou webhook
   Dashgoo), sem depender de máquina pessoal.
 - [ ] **Fase 4 — Agendador + segredos no backend.** Cron do provedor;
@@ -103,3 +140,22 @@ Como todo acesso passa por `comendo_db.py`, migrar SQLite → Postgres é trocar
   de desligar o stack local.
 
 Detalhe do que o produto final precisa cobrir: `docs/HANDOFF.md` §11.
+
+---
+
+## Externo pendente
+
+Itens que só avançam com algo que só quem opera a agência tem acesso —
+código e testes já estão prontos, falta só a peça externa:
+
+1. **Postgres real de destino (Fase 2).** O adapter e a migração já estão
+   testados de ponta a ponta contra um Postgres real (dados de produção
+   completos, 82 clientes / 122 envios, zero inconsistência). Falta só um
+   `DATABASE_URL` real — se o app da Comendo no Lovable já tem um Supabase
+   por trás, é o encaixe natural (usar o mesmo). Assim que tiver a string de
+   conexão, rodar `migrar_para_postgres.py` é o único passo restante.
+2. **Servidor para a Evolution (WhatsApp) — Fase 5.** Precisa de um VPS/PaaS
+   sempre-ligado (Railway, Render, Hetzner, DigitalOcean…) pra hospedar a
+   Evolution API, e depois **reconectar cada instância escaneando o QR de
+   novo** — isso é uma ação física de cada gestor no próprio celular, não
+   automatizável.
