@@ -42,3 +42,9 @@ env/
 
 # ===== Sistema =====
 .DS_Store
+
+# ===== Sistema de Narração (ElevenLabs) =====
+# Áudios gerados (iterações). Aprovados na raiz do cliente vão versionados.
+narracao-ia/clientes/**/testes/
+*.wav
+*_raw.mp3
