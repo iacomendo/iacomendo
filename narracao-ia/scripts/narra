@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Wrapper do narrar.py: injeta ELEVENLABS_API_KEY (via .env, gitignorado) e o
+# caminho do ffmpeg estático user-space. Repassa todos os argumentos ao script.
+#
+# Uso (a partir da raiz do repo):
+#   narracao-ia/scripts/narra --voz vitoria --tom empolgada --arquivo copy.txt --saida out.mp3
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJ_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # narracao-ia/
+
+# 1. carrega .env se existir (fica na raiz do repo; nunca versionado).
+#    Procura subindo a partir da pasta do projeto até achar .env ou .git.
+find_repo_env() {
+  local d="$1"
+  while [[ "$d" != "/" ]]; do
+    [[ -f "$d/.env" ]] && { echo "$d/.env"; return 0; }
+    [[ -d "$d/.git" ]] && { [[ -f "$d/.env" ]] && echo "$d/.env"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 0
+}
+ENV_FILE="$(find_repo_env "$PROJ_DIR")"
+if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ENV_FILE"
+  set +a
+fi
+
+# 2. localiza ffmpeg (user-space tem prioridade)
+if [[ -z "${FFMPEG_BIN:-}" ]]; then
+  if [[ -x "$HOME/.local/bin/ffmpeg" ]]; then
+    export FFMPEG_BIN="$HOME/.local/bin/ffmpeg"
+  else
+    export FFMPEG_BIN="ffmpeg"
+  fi
+fi
+
+if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
+  echo "ERRO: ELEVENLABS_API_KEY não definida. Crie um .env a partir de .env.example." >&2
+  exit 2
+fi
+
+exec python3 "$PROJ_DIR/scripts/narrar.py" "$@"

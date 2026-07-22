@@ -34,15 +34,15 @@ Você então:
 2. **Escolhe a voz** (padrão `vitoria`, feminina aprovada). Só usa outra se o
    Lucas pedir. `lucas` (masculina) também está aprovada. **Não** usar `francis`
    (reprovada, robótica) sem aviso.
-3. **Salva a copy** em `clientes/<Cliente>/testes/copy.txt`.
-4. **Gera** com o script:
+3. **Salva a copy** em `narracao-ia/clientes/<Cliente>/testes/copy.txt`.
+4. **Gera** com o script (todos os caminhos a partir da raiz do repo):
    ```bash
-   ELEVENLABS_API_KEY=... FFMPEG_BIN=~/.local/bin/ffmpeg \
-   python3 scripts/narrar.py --voz vitoria --tom <tom> \
-     --arquivo clientes/<Cliente>/testes/copy.txt \
-     --saida "clientes/<Cliente>/testes/<Cliente> - <tom>.mp3"
+   narracao-ia/scripts/narra --voz vitoria --tom <tom> \
+     --arquivo "narracao-ia/clientes/<Cliente>/testes/copy.txt" \
+     --saida "narracao-ia/clientes/<Cliente>/testes/<Cliente> - <tom>.mp3"
    ```
-   (ou use o wrapper `scripts/narra` que já injeta chave/ffmpeg)
+   (o wrapper `narracao-ia/scripts/narra` já injeta chave/ffmpeg; a chave vem do
+   `.env` na raiz ou do secret do environment)
 5. **Confere a camada de pronúncia** antes de gerar, com `--mostrar-texto`, e
    itera com o Lucas se algum termo abrasileirado ficar estranho.
 6. **Entrega** o mp3 pro Lucas. Iterações vão em `testes/`. Quando ele aprovar,
@@ -56,7 +56,8 @@ Você então:
 - Entregas longas vão para arquivo, não impressas no chat.
 
 ## Parâmetros técnicos
-Ver `scripts/narrar.py` (fonte da verdade) e `docs/HANDOFF-NARRACAO.md`. Resumo:
+Ver `narracao-ia/scripts/narrar.py` (fonte da verdade) e
+`narracao-ia/docs/HANDOFF-NARRACAO.md`. Resumo:
 - Modelo `eleven_multilingual_v2` — **NUNCA** `eleven_v3` (inventa sotaque).
 - Output `mp3_44100_128` (máximo do plano Starter).
 - Acabamento: domador de picos (sempre) + ritmo enxuto (silenceremove + atempo).

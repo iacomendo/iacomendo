@@ -45,6 +45,6 @@ env/
 
 # ===== Sistema de Narração (ElevenLabs) =====
 # Áudios gerados (iterações). Aprovados na raiz do cliente vão versionados.
-clientes/**/testes/
+narracao-ia/clientes/**/testes/
 *.wav
 *_raw.mp3
