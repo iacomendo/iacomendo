@@ -4,8 +4,8 @@ argument-hint: (opcional) cole a copy + nome do cliente, ou deixe vazio para o f
 ---
 
 Você vai gerar uma **narração com voz humana clonada** (ElevenLabs) para a
-Comendo MKT. Siga o processo da skill `narra-onboarding`
-(`.claude/skills/narra-onboarding/SKILL.md`) — leia-a se precisar dos detalhes.
+Comendo MKT. Siga o processo da skill `comendo-narracao`
+(`.claude/skills/comendo-narracao/SKILL.md`) — leia-a se precisar dos detalhes.
 
 ## Regra de ouro
 A copy do time entra **VERBATIM**. Nunca reescrever, nunca mudar POV, nunca

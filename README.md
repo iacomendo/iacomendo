@@ -6,7 +6,7 @@ raiz.
 
 | Pasta | Projeto | O que é |
 |---|---|---|
-| [`narracao-ia/`](narracao-ia/) | **Narração por IA** | Transforma copy do time em narração com voz humana clonada (ElevenLabs), para onboarding e captação. Comando `/narra-onboarding`. |
+| [`narracao-ia/`](narracao-ia/) | **Narração por IA** | Transforma copy do time em narração com voz humana clonada (ElevenLabs), para onboarding e captação. Comando `/comendo-narracao`. |
 | [`relatorios-automaticos/`](relatorios-automaticos/) | **Automação de Relatórios** | Relatórios semanais de tráfego pago no WhatsApp do cliente (Dashgoo + Meta Ads) + auditoria. |
 
 Cada pasta tem seu próprio `README.md` com os detalhes.

@@ -29,7 +29,7 @@ scripts/narra --voz vitoria --tom empolgada \
 scripts/narra --voz vitoria --tom media --arquivo copy.txt --mostrar-texto
 ```
 
-Ou, pelo Claude Code, digite `/narra-onboarding` e cole a copy + cliente + briefing.
+Ou, pelo Claude Code, digite `/comendo-narracao` e cole a copy + cliente + briefing.
 
 ### Flags do `narrar.py`
 | Flag | Valores | Nota |
@@ -56,7 +56,7 @@ Output: `mp3_44100_128`. `use_speaker_boost: true` sempre.
 ```
 scripts/narrar.py     motor (fonte da verdade dos parâmetros)
 scripts/narra         wrapper (injeta chave + ffmpeg)
-.claude/skills/narra-onboarding/SKILL.md   comando /narra-onboarding
+.claude/skills/comendo-narracao/SKILL.md   comando /comendo-narracao
 docs/HANDOFF-NARRACAO.md       handoff completo (receitas, o que foi reprovado, pendências)
 clientes/<Cliente>/   saídas; testes/ (iterações), raiz (APROVADO - ...mp3)
 ```
