@@ -1257,5 +1257,34 @@ def main():
     print(f"\n🎉 Concluído. As mensagens estão em: {pasta_semana_local}")
 
 
+def _notificar_falha_critica(erro):
+    """Avisa por WhatsApp que o run INTEIRO falhou — não confundir com erro
+    de um cliente (esses já são tratados no loop e aparecem no resumo). Cobre
+    falhas fora do loop principal (autenticação Google, Drive, etc.) que hoje
+    não geram nenhum alerta, só log (HANDOFF §8.8). Best-effort: se o próprio
+    envio falhar (ex.: Evolution fora do ar), só loga — não mascara o erro
+    original.
+    """
+    destino = config.ALERTA_NUMERO
+    if not destino:
+        print("⚠️  Falha crítica sem ALERTA_NUMERO configurado — nenhum alerta enviado.")
+        return
+    texto = (
+        f"🚨 Falha crítica na automação de relatórios (Dashgoo)\n\n"
+        f"{type(erro).__name__}: {erro}\n\n"
+        f"O run não completou. Confira o log."
+    )
+    try:
+        enviar_whatsapp_texto(destino, texto, instancia=config.ALERTA_INSTANCIA)
+        print(f"🚨 Alerta de falha crítica enviado para {destino}.")
+    except Exception as e:
+        print(f"⚠️  Falha crítica E o alerta também falhou ao enviar: {e}")
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"\n❌ FALHA CRÍTICA — o run não completou: {e}")
+        _notificar_falha_critica(e)
+        raise  # mantém o traceback no log e o exit code != 0 (pro agendador perceber)

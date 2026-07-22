@@ -1,0 +1,21 @@
+# Agenda comendo-relatorios.service toda segunda 10h (horário de Brasília),
+# substituindo o launchd (com.comendo.relatorios.plist) do Mac.
+#
+# systemd >= 247 aceita fuso horário explícito no OnCalendar (usado abaixo).
+# Em versões mais antigas, remova o " America/Sao_Paulo" e garanta que o
+# fuso do PRÓPRIO HOST já é America/Sao_Paulo (timedatectl set-timezone).
+#
+# Persistent=true: se o host estava desligado no horário exato (ex.: reboot
+# do provedor), roda assim que voltar, em vez de esperar a próxima segunda —
+# mitiga o "risco estrutural: máquina única" do HANDOFF §8/§10, mas não
+# substitui ter um host realmente sempre-ligado.
+
+[Unit]
+Description=Timer semanal — Comendo MKT relatórios (Dashgoo)
+
+[Timer]
+OnCalendar=Mon *-*-* 10:00:00 America/Sao_Paulo
+Persistent=true
+
+[Install]
+WantedBy=timers.target

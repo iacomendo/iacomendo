@@ -15,12 +15,18 @@ e banco gerenciado.
 
 ## Arquitetura: local (hoje) × nuvem (destino)
 
+> **Decisão atual: sem Lovable/Supabase por enquanto.** O backend Postgres
+> existe e está testado (Fase 2), mas **não está em uso** — o sistema roda
+> em SQLite (o mesmo `clientes.db` de sempre) até essa decisão mudar. Ativar
+> o Postgres depois é só definir `DATABASE_URL`; nenhum código muda.
+
 | Peça | Local (Mac) | Nuvem (destino) |
 |---|---|---|
-| WhatsApp (Evolution) | Docker em `localhost:8080` | servidor sempre-ligado, URL pública |
-| Banco | SQLite (`clientes.db`) | Postgres gerenciado (Supabase) |
-| Ingestão Dashgoo | Gmail OAuth + Playwright, local | backend lendo Gmail por API |
-| Agendador | `launchd` (seg 10h) | cron do provedor / GitHub Actions |
+| WhatsApp (Evolution) | Docker em `localhost:8080` | servidor sempre-ligado (VPS), URL pública — ver `deploy/` |
+| Banco | SQLite (`clientes.db`) | **segue SQLite por ora** (mesmo arquivo, agora num VPS); Postgres fica pronto e desligado |
+| Ingestão Dashgoo | Gmail OAuth + Playwright, local | mesmo código, rodando no VPS (Gmail já é uma API — não depende de onde roda) |
+| Agendador | `launchd` (seg 10h) | `systemd` timer num VPS — ver `deploy/systemd/` (não serverless: SQLite precisa de disco persistente) |
+| Alerta de falha | inexistente (só log em `.txt`) | aviso por WhatsApp quando o run inteiro falha (`ALERTA_NUMERO`) |
 | Segredos | hardcoded / arquivos | variáveis de ambiente / secret store |
 | Chamada de IA | chave no `.py` | chave em backend (env) |
 
@@ -50,9 +56,10 @@ Variáveis principais (ver `.env.example` para a lista completa):
 | `EVOLUTION_URL` / `EVOLUTION_API_KEY` | WhatsApp (local `localhost:8080` ou URL pública) |
 | `GOOGLE_TOKEN_JSON` / `GOOGLE_CREDENTIALS_JSON` | Gmail+Drive por env (nuvem) |
 | `GOOGLE_TOKEN_PATH` / `GOOGLE_CREDENTIALS_PATH` | Gmail+Drive por arquivo (local) |
-| `DATABASE_URL` | Postgres (nuvem) — quando ausente, usa SQLite `DB_PATH` |
+| `DATABASE_URL` | Postgres (nuvem) — **não usada por ora** (decisão: sem Lovable/Supabase ainda); ausente = SQLite `DB_PATH` |
 | `PAINEL_HOST` / `PORT` | bind do painel (local `127.0.0.1`, nuvem `0.0.0.0`) |
 | `NUMEROS_GESTORES` / `MEU_NUMERO` | fallback de números de gestor |
+| `ALERTA_NUMERO` / `ALERTA_INSTANCIA` | pra onde avisar por WhatsApp se o run inteiro falhar (default: `MEU_NUMERO`/instância padrão) |
 
 ### Segredos — ⚠️ importante
 
@@ -116,6 +123,21 @@ idempotência e integridade referencial testados contra Postgres 16 real (não
 só SQLite), incluindo uma migração completa dos 82 clientes / 122 envios do
 `clientes.db` de produção atual, com verificação de zero referências órfãs.
 
+**Por ora, este backend fica pronto mas inativo** — a operação continua em
+SQLite até a decisão de usar Postgres/Lovable mudar (ver nota no topo).
+
+---
+
+## Deploy num VPS
+
+Scaffolding pronto em `deploy/` (Dockerfile na raiz + `deploy/evolution/` +
+`deploy/systemd/`) pra rodar o stack inteiro (app + painel + Evolution) num
+servidor Linux sempre-ligado, no lugar do Mac — inclusive o agendamento
+semanal (substituindo o `launchd`) e o alerta de falha crítica por WhatsApp
+(`ALERTA_NUMERO`), que hoje não existe (HANDOFF §8.8). Detalhes e passo a
+passo em `deploy/README.md`. **Ainda não implantado em nenhum servidor
+real** — é a preparação, pronta pra usar quando um VPS for provisionado.
+
 ---
 
 ## Roteiro da migração (fases)
@@ -124,18 +146,27 @@ só SQLite), incluindo uma migração completa dos 82 clientes / 122 envios do
   configuração externalizada em env vars (`config.py`); segredos protegidos
   (`.gitignore`); `EVOLUTION_URL` e credenciais Google já preparados para
   URL pública / env. *(esta entrega)*
-- [x] **Fase 2 — Banco na nuvem.** `comendo_db.py` ganha backend Postgres
-  quando `DATABASE_URL` estiver definida (mesma API pública, SQLite e Postgres
-  lado a lado); `migrar_para_postgres.py` migra o `clientes.db` atual
-  preservando ids e integridade referencial. *(esta entrega — falta apenas
-  provisionar o Postgres real de destino, ex. Supabase, e rodar a migração
-  contra ele — ver §Externo pendente)*
-- [ ] **Fase 3 — Ingestão Dashgoo.** Gmail por API no backend (ou webhook
-  Dashgoo), sem depender de máquina pessoal.
-- [ ] **Fase 4 — Agendador + segredos no backend.** Cron do provedor;
-  segredos no secret store; alerta de falha (hoje inexistente).
-- [ ] **Fase 5 — Evolution na nuvem.** Servidor sempre-ligado; reconexão de
-  cada instância; teste em grupo de teste antes de tocar cliente real.
+- [x] **Fase 2 — Banco na nuvem (código pronto, não ativado).**
+  `comendo_db.py` ganha backend Postgres quando `DATABASE_URL` estiver
+  definida (mesma API pública, SQLite e Postgres lado a lado);
+  `migrar_para_postgres.py` migra o `clientes.db` atual preservando ids e
+  integridade referencial — testado contra Postgres real. **Decisão atual:
+  sem Lovable/Supabase por ora** — a operação segue em SQLite; ativar
+  Postgres depois é só definir `DATABASE_URL`, sem mudar código.
+- [x] **Ingestão Dashgoo — já cloud-ready desde a Fase 1.** Gmail é uma API
+  (não depende de rodar no Mac); `autenticar_google()` já suporta headless
+  via `GOOGLE_TOKEN_JSON`. O que falta (webhook do Dashgoo em vez de parsing
+  de e-mail/assunto) depende do Dashgoo oferecer isso — não é código nosso,
+  fica registrado como limitação conhecida (`docs/HANDOFF.md` §11.4).
+- [x] **Fase 4 — Alerta de falha + scaffolding do agendador.** Falha crítica
+  (fora do loop por-cliente) agora avisa por WhatsApp (`ALERTA_NUMERO`) e
+  garante exit code de erro pro agendador perceber — antes só ficava em log
+  (HANDOFF §8.8). `deploy/systemd/` traz o `.service`+`.timer` que substitui
+  o `launchd`, pronto pra instalar num VPS. *(falta só ligar isso num
+  servidor real — ver `deploy/README.md`)*
+- [ ] **Fase 5 — Evolution na nuvem.** `deploy/evolution/docker-compose.yml`
+  pronto; falta provisionar o VPS de verdade e reconectar cada instância
+  escaneando o QR de novo (ação manual, por gestor).
 - [ ] **Fase 6 — Virada.** Rodar em paralelo com o Mac por 1–2 semanas antes
   de desligar o stack local.
 
@@ -148,14 +179,15 @@ Detalhe do que o produto final precisa cobrir: `docs/HANDOFF.md` §11.
 Itens que só avançam com algo que só quem opera a agência tem acesso —
 código e testes já estão prontos, falta só a peça externa:
 
-1. **Postgres real de destino (Fase 2).** O adapter e a migração já estão
-   testados de ponta a ponta contra um Postgres real (dados de produção
-   completos, 82 clientes / 122 envios, zero inconsistência). Falta só um
-   `DATABASE_URL` real — se o app da Comendo no Lovable já tem um Supabase
-   por trás, é o encaixe natural (usar o mesmo). Assim que tiver a string de
-   conexão, rodar `migrar_para_postgres.py` é o único passo restante.
-2. **Servidor para a Evolution (WhatsApp) — Fase 5.** Precisa de um VPS/PaaS
-   sempre-ligado (Railway, Render, Hetzner, DigitalOcean…) pra hospedar a
-   Evolution API, e depois **reconectar cada instância escaneando o QR de
-   novo** — isso é uma ação física de cada gestor no próprio celular, não
-   automatizável.
+1. **Um VPS sempre-ligado (Fases 4/5).** O scaffolding inteiro já está em
+   `deploy/` (Dockerfile, docker-compose da Evolution, unidades systemd do
+   agendador e do painel) — falta só provisionar o servidor de verdade
+   (Railway, Render, Hetzner, DigitalOcean…), apontar um domínio, e seguir o
+   passo a passo em `deploy/README.md`. Depois disso, **reconectar cada
+   instância de gestor escaneando o QR de novo** é uma ação manual, física,
+   de cada gestor no próprio celular — não automatizável.
+2. **Postgres real de destino (Fase 2) — não urgente agora.** Adapter e
+   migração já testados de ponta a ponta contra Postgres real (82 clientes /
+   122 envios, zero inconsistência), mas **adiado por decisão**: sem
+   Lovable/Supabase por enquanto. Quando isso mudar, é só um `DATABASE_URL`
+   e rodar `migrar_para_postgres.py`.

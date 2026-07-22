@@ -1,0 +1,30 @@
+# Unidade systemd que mantém o painel.py rodando continuamente num VPS,
+# substituindo o "dá 2 cliques no Painel.command" manual do Mac.
+#
+# Instalação (como root, num VPS Linux com o repo em /opt/comendo):
+#   cp deploy/systemd/comendo-painel.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now comendo-painel.service
+#
+# O painel escuta em PAINEL_HOST=0.0.0.0 (ver config.py) — coloque um proxy
+# HTTPS na frente (Caddy/Traefik/Nginx) em vez de expor a porta direto.
+
+[Unit]
+Description=Comendo MKT — painel web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=comendo
+WorkingDirectory=/opt/comendo
+EnvironmentFile=/opt/comendo/.env
+ExecStart=/opt/comendo/.venv/bin/python3 painel.py
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

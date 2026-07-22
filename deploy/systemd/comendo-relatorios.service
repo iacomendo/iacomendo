@@ -1,0 +1,32 @@
+# Unidade systemd que roda relatorios_automacao.py uma vez (fluxo Dashgoo).
+# Equivalente ao com.comendo.relatorios.plist do launchd no Mac.
+#
+# Disparada pelo timer comendo-relatorios.timer — não habilite este .service
+# diretamente (nem rode `systemctl enable` nele), só o .timer.
+#
+# Instalação (como root, num VPS Linux com o repo em /opt/comendo):
+#   cp deploy/systemd/comendo-relatorios.* /etc/systemd/system/
+#   # edite o WorkingDirectory/User abaixo se o caminho/usuário for outro
+#   systemctl daemon-reload
+#   systemctl enable --now comendo-relatorios.timer
+#
+# Segredos: este serviço lê de /opt/comendo/.env (EnvironmentFile abaixo) —
+# esse arquivo precisa existir no host com permissão 600, nunca commitado.
+
+[Unit]
+Description=Comendo MKT — relatório semanal (Dashgoo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=comendo
+WorkingDirectory=/opt/comendo
+EnvironmentFile=/opt/comendo/.env
+ExecStart=/opt/comendo/.venv/bin/python3 relatorios_automacao.py
+
+# Falha crítica já dispara alerta por WhatsApp (ver ALERTA_NUMERO em
+# config.py) — isto aqui é a segunda camada: fica no journal do systemd
+# (journalctl -u comendo-relatorios) mesmo se o alerta também falhar.
+StandardOutput=journal
+StandardError=journal

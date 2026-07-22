@@ -177,3 +177,15 @@ NUMEROS_GESTORES = _parse_numeros_gestores(_get("NUMEROS_GESTORES", ""))
 
 # Número usado em MODO_TESTE (envio só pra você).
 MEU_NUMERO = _get("MEU_NUMERO", "")
+
+
+# =====================================================================
+# Alerta de falha crítica (Fase 4)
+# =====================================================================
+# Hoje uma falha FORA do loop por-cliente (autenticação Google, Drive, etc.)
+# derruba o script inteiro sem avisar ninguém — só fica no log (HANDOFF §8.8).
+# ALERTA_NUMERO/ALERTA_INSTANCIA definem pra onde mandar um aviso por
+# WhatsApp quando isso acontece. Sem env própria, cai no MEU_NUMERO/instância
+# padrão — funciona sem configuração extra.
+ALERTA_NUMERO = _get("ALERTA_NUMERO", MEU_NUMERO)
+ALERTA_INSTANCIA = _get("ALERTA_INSTANCIA", EVOLUTION_INSTANCIA)
