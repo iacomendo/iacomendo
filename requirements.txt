@@ -1,0 +1,19 @@
+# Dependências da automação Comendo MKT
+
+# HTTP
+requests>=2.31
+
+# Google (Gmail + Drive) — fluxo Dashgoo
+google-api-python-client>=2.100
+google-auth>=2.23
+google-auth-oauthlib>=1.1
+
+# Renderização/download do PDF do Dashgoo
+playwright>=1.40
+
+# Config via .env em dev local (em produção as env vars vêm do provedor)
+python-dotenv>=1.0
+
+# Banco na nuvem (Postgres). Só é usado quando DATABASE_URL está definida;
+# no modo SQLite local nada disso é necessário.
+psycopg[binary]>=3.1

@@ -1,0 +1,44 @@
+# ===== SEGREDOS — NUNCA versionar =====
+# Credenciais Google (OAuth)
+credentials.json
+token.json
+token.json.*
+*.token.json
+
+# Variáveis de ambiente com chaves reais
+.env
+.env.local
+.env.*.local
+
+# Banco de dados e dados de cliente
+*.db
+*.db.backup_*
+*.sqlite
+*.sqlite3
+
+# CSVs legados (dados de cliente)
+grupos.csv
+grupos_yago.csv
+contas_ads.csv
+*.csv.backup_*
+
+# ===== Saída / runtime =====
+Relatorios/
+relatorios_saida/
+painel_ultima_execucao.log
+automacao_log.txt
+automacao_erro.txt
+automacao_ads_log.txt
+automacao_ads_erro.txt
+*.log
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ===== Sistema =====
+.DS_Store
