@@ -1,9 +1,9 @@
 ---
-name: narra-onboarding
+name: comendo-narracao
 description: Transforma copy pronta do time da Comendo MKT em narração com voz humana clonada (ElevenLabs) para vídeos de onboarding e campanhas de captação. Use quando o Lucas colar uma copy + nome do cliente e pedir para narrar. Classifica o tom, aplica a camada de pronúncia abrasileirada e gera o áudio na voz certa, salvando na pasta do cliente.
 ---
 
-# /narra-onboarding — Narração por voz clonada (Comendo MKT)
+# /comendo-narracao — Narração por voz clonada (Comendo MKT)
 
 ## Regra de ouro
 A copy do time entra **VERBATIM**. Nunca reescrever, nunca mudar POV, nunca

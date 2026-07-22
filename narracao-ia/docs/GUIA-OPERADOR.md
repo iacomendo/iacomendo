@@ -5,7 +5,7 @@ As mudanças técnicas (parâmetros, vozes novas, pronúncias) são feitas no **
 técnico do Lucas** e chegam aqui via `git pull`.
 
 ## Como gerar uma narração
-1. Digite **`/narra-onboarding`**.
+1. Digite **`/comendo-narracao`**.
 2. O assistente vai te perguntar, em pop-up:
    - **Tom** — Média (padrão acolhedor) / Empolgada (fast food, promoção) /
      Calma (premium).

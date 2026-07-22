@@ -55,17 +55,17 @@ Vozes antigas do Francis (não usar): `fhgiP1p9WBugy2EWdCiF`, `pWLgn1Kh8MPwjOtTF
 
 ---
 
-## 4. O comando `/narra-onboarding`
+## 4. O comando `/comendo-narracao`
 
-**Localização:** `~/.claude/skills/narra-onboarding/`
+**Localização:** `~/.claude/skills/comendo-narracao/`
 - `SKILL.md` — instruções do processo
 - `narrar.py` — script que gera o áudio
 
-**Uso pelo Lucas:** digitar `/narra-onboarding` e colar a copy + nome do cliente + 1-2 linhas de briefing.
+**Uso pelo Lucas:** digitar `/comendo-narracao` e colar a copy + nome do cliente + 1-2 linhas de briefing.
 
 **Uso direto do script:**
 ```bash
-cd ~/.claude/skills/narra-onboarding
+cd ~/.claude/skills/comendo-narracao
 python3 narrar.py --voz vitoria --tom empolgada --arquivo texto.txt --saida saida.mp3
 ```
 Flags: `--voz` (vitoria|lucas|francis|daniel|eduardo) · `--tom` (empolgada|media|calma) · `--sem-acabamento`
