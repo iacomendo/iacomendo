@@ -37,8 +37,11 @@ if [[ -z "${FFMPEG_BIN:-}" ]]; then
   fi
 fi
 
-if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
-  echo "ERRO: ELEVENLABS_API_KEY não definida. Crie um .env a partir de .env.example." >&2
+# 3. checagem de chave: quem valida é o narrar.py, conforme o --motor escolhido.
+#    Aqui só avisamos cedo se NENHUMA das chaves existir.
+if [[ -z "${ELEVENLABS_API_KEY:-}" && -z "${FISH_API_KEY:-}" ]]; then
+  echo "ERRO: nenhuma chave de voz definida (ELEVENLABS_API_KEY ou FISH_API_KEY)." >&2
+  echo "      Crie um .env na raiz do repo a partir de .env.example." >&2
   exit 2
 fi
 

@@ -40,6 +40,14 @@ VOZES = {
     "eduardo": "83Nae6GFQiNslSbuzmE7",   # BR masculina genérica — interina
 }
 
+# Vozes no Fish Audio (reference_id de cada modelo de voz na conta).
+# Preencher conforme as vozes forem clonadas/localizadas lá.
+# Use `--listar-vozes --motor fish` para descobrir os IDs da conta.
+VOZES_FISH = {
+    # "vitoria": "<reference_id>",
+    # "lucas":   "<reference_id>",
+}
+
 # ---------------------------------------------------------------------------
 # 2. Tons — parâmetros de geração (§6 do handoff)
 #    Modelo: eleven_multilingual_v2  (NUNCA eleven_v3 — inventa sotaque)
@@ -51,6 +59,20 @@ TONS = {
 }
 MODELO = "eleven_multilingual_v2"
 OUTPUT_FORMAT = "mp3_44100_128"  # máximo do plano Starter
+
+# ---------------------------------------------------------------------------
+# 2b. Fish Audio — parâmetros por tom
+#     A prosódia natural do modelo é o que temos (§9.1 do handoff): não
+#     esculpir ritmo por trecho. O ajuste de velocidade fica no acabamento
+#     (atempo uniforme), igual ao fluxo validado.
+# ---------------------------------------------------------------------------
+TONS_FISH = {
+    "empolgada": {"temperature": 0.80, "top_p": 0.80},
+    "media":     {"temperature": 0.70, "top_p": 0.70},
+    "calma":     {"temperature": 0.60, "top_p": 0.70},
+}
+FISH_MODELO = "s1"          # s1 | s2-pro | s2.1-pro | s2.1-pro-free
+FISH_API = "https://api.fish.audio/v1/tts"
 
 # ---------------------------------------------------------------------------
 # 3. Camada de pronúncia — abrasileirar (§7 do handoff)
@@ -118,6 +140,55 @@ def gerar_tts(texto: str, voice_id: str, tom: dict, api_key: str, destino_raw: s
         sys.exit(1)
 
 
+def gerar_tts_fish(texto: str, reference_id: str, tom: dict, api_key: str,
+                   destino_raw: str, modelo: str = FISH_MODELO):
+    """Gera o áudio no Fish Audio. Mesma assinatura lógica do motor ElevenLabs."""
+    import json
+    payload = {
+        "text": texto,
+        "reference_id": reference_id,
+        "format": "mp3",
+        "mp3_bitrate": 128,
+        "normalize": True,
+        "temperature": tom["temperature"],
+        "top_p": tom["top_p"],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(FISH_API, data=data, method="POST")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("model", modelo)
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            with open(destino_raw, "wb") as f:
+                f.write(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")
+        print(f"ERRO Fish Audio {e.code}: {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+def listar_vozes_fish(api_key: str):
+    """Lista os modelos de voz da conta no Fish Audio (para descobrir reference_id)."""
+    import json
+    url = "https://api.fish.audio/model?self=true&page_size=100"
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {api_key}")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            j = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"ERRO Fish Audio {e.code}: {e.read().decode('utf-8','replace')}",
+              file=sys.stderr)
+        sys.exit(1)
+    itens = j.get("items", j if isinstance(j, list) else [])
+    if not itens:
+        print("(nenhum modelo de voz encontrado nesta conta)")
+        return
+    for m in itens:
+        print(f"{m.get('_id') or m.get('id')}  {m.get('title') or m.get('name')}")
+
+
 # ---------------------------------------------------------------------------
 # 5. Acabamento de áudio (§8 do handoff) — via ffmpeg
 #    Domador de picos (sempre) + ritmo enxuto (silenceremove + atempo).
@@ -143,8 +214,15 @@ def acabamento(entrada_mp3: str, saida_mp3: str, atempo: float):
 
 def main():
     ap = argparse.ArgumentParser(description="Narração com voz clonada (Comendo MKT)")
-    ap.add_argument("--voz", required=True, choices=list(VOZES.keys()))
-    ap.add_argument("--tom", required=True, choices=list(TONS.keys()))
+    ap.add_argument("--motor", default=os.environ.get("NARRA_MOTOR", "elevenlabs"),
+                    choices=["elevenlabs", "fish"],
+                    help="motor de voz (padrão: elevenlabs; ou NARRA_MOTOR no ambiente)")
+    ap.add_argument("--modelo-fish", default=FISH_MODELO,
+                    help=f"modelo do Fish Audio (padrão: {FISH_MODELO})")
+    ap.add_argument("--listar-vozes", action="store_true",
+                    help="lista as vozes da conta do motor escolhido e sai")
+    ap.add_argument("--voz", choices=list(VOZES.keys()))
+    ap.add_argument("--tom", choices=list(TONS.keys()))
     ap.add_argument("--arquivo", help="caminho do .txt com a copy")
     ap.add_argument("--texto", help="copy passada direto")
     ap.add_argument("--saida", help="caminho do .mp3 de saída (obrigatório exceto em --mostrar-texto)")
@@ -153,6 +231,33 @@ def main():
     ap.add_argument("--mostrar-texto", action="store_true",
                     help="imprime o texto que iria ao motor e sai (dry-run)")
     args = ap.parse_args()
+
+    # chave conforme o motor
+    def _chave():
+        if args.motor == "fish":
+            k = os.environ.get("FISH_API_KEY") or os.environ.get("FISHAUDIO_API_KEY")
+            if not k:
+                print("ERRO: defina FISH_API_KEY no ambiente", file=sys.stderr)
+                sys.exit(2)
+        else:
+            k = os.environ.get("ELEVENLABS_API_KEY")
+            if not k:
+                print("ERRO: defina ELEVENLABS_API_KEY no ambiente", file=sys.stderr)
+                sys.exit(2)
+        return k
+
+    # atalho: listar vozes da conta e sair
+    if args.listar_vozes:
+        if args.motor == "fish":
+            listar_vozes_fish(_chave())
+        else:
+            for alias, vid in VOZES.items():
+                print(f"{vid}  {alias}")
+        return
+
+    if not args.voz or not args.tom:
+        print("ERRO: --voz e --tom são obrigatórios", file=sys.stderr)
+        sys.exit(2)
 
     # 1. obter a copy (verbatim)
     if args.arquivo:
@@ -184,20 +289,27 @@ def main():
         print("ERRO: --saida é obrigatório", file=sys.stderr)
         sys.exit(2)
 
-    api_key = os.environ.get("ELEVENLABS_API_KEY")
-    if not api_key:
-        print("ERRO: defina ELEVENLABS_API_KEY no ambiente", file=sys.stderr)
-        sys.exit(2)
-
-    voice_id = VOZES[args.voz]
-    tom = TONS[args.tom]
+    api_key = _chave()
 
     os.makedirs(os.path.dirname(os.path.abspath(args.saida)), exist_ok=True)
 
     # 3. gerar
     with tempfile.NamedTemporaryFile(suffix="_raw.mp3", delete=False) as tmp:
         raw = tmp.name
-    gerar_tts(texto_motor, voice_id, tom, api_key, raw)
+
+    if args.motor == "fish":
+        ref = VOZES_FISH.get(args.voz)
+        if not ref:
+            print(f"ERRO: a voz '{args.voz}' ainda não tem reference_id no Fish Audio.\n"
+                  f"      Rode: narrar.py --motor fish --listar-vozes\n"
+                  f"      e preencha VOZES_FISH no topo deste script.", file=sys.stderr)
+            sys.exit(2)
+        gerar_tts_fish(texto_motor, ref, TONS_FISH[args.tom], api_key, raw,
+                       modelo=args.modelo_fish)
+    else:
+        gerar_tts(texto_motor, VOZES[args.voz], TONS[args.tom], api_key, raw)
+
+    tom = TONS[args.tom]  # atempo do acabamento (comum aos dois motores)
 
     # 4. acabamento
     if args.sem_acabamento:
