@@ -63,3 +63,15 @@ clientes/<Cliente>/   saídas; testes/ (iterações), raiz (APROVADO - ...mp3)
 
 Detalhes completos, receita de clonagem, o que foi reprovado e pendências:
 ver [`docs/HANDOFF-NARRACAO.md`](docs/HANDOFF-NARRACAO.md).
+
+## Serviço web + GPT personalizado
+
+Para o time gerar narrações sem usar o Claude, há um serviço que expõe o mesmo
+motor numa **página web** e numa **API** (para um GPT personalizado no ChatGPT):
+
+```bash
+python3 narracao-ia/servidor.py     # ver docs/SERVICO-WEB-E-GPT.md
+```
+
+Passo a passo de deploy e de configuração da Action do GPT:
+[`docs/SERVICO-WEB-E-GPT.md`](docs/SERVICO-WEB-E-GPT.md).

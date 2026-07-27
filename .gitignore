@@ -48,3 +48,6 @@ env/
 narracao-ia/clientes/**/testes/
 *.wav
 *_raw.mp3
+
+# Áudios gerados pelo servidor web
+narracao-ia/saidas/
