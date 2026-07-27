@@ -44,9 +44,13 @@ VOZES = {
 # Preencher conforme as vozes forem clonadas/localizadas lá.
 # Use `--listar-vozes --motor fish` para descobrir os IDs da conta.
 VOZES_FISH = {
-    # "vitoria": "<reference_id>",
-    # "lucas":   "<reference_id>",
+    "vitoria": "fd71af6deb744ea89aa6c24530a5d1e6",   # Voz Vitória
+    "francis": "fa4336f022684120aa3372b70760924b",   # Voz de Francis
+    "yago":    "d145c45814ef408bb083704a3e94f640",   # Voz Yago
 }
+
+# Aliases válidos em --voz: união dos dois motores.
+ALIASES = sorted(set(VOZES) | set(VOZES_FISH))
 
 # ---------------------------------------------------------------------------
 # 2. Tons — parâmetros de geração (§6 do handoff)
@@ -221,7 +225,7 @@ def main():
                     help=f"modelo do Fish Audio (padrão: {FISH_MODELO})")
     ap.add_argument("--listar-vozes", action="store_true",
                     help="lista as vozes da conta do motor escolhido e sai")
-    ap.add_argument("--voz", choices=list(VOZES.keys()))
+    ap.add_argument("--voz", choices=ALIASES)
     ap.add_argument("--tom", choices=list(TONS.keys()))
     ap.add_argument("--arquivo", help="caminho do .txt com a copy")
     ap.add_argument("--texto", help="copy passada direto")
