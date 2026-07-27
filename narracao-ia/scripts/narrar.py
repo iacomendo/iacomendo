@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-narrar.py — Gera narração com voz clonada (ElevenLabs) para a Comendo MKT.
+narrar.py — Gera narração com voz clonada para a Comendo MKT.
+
+Motor padrão: Fish Audio (--motor fish). ElevenLabs segue disponível (--motor elevenlabs).
 
 Parâmetros validados no handoff do Sistema de Narração (§6, §7, §8).
 Regra de ouro: a copy do time entra VERBATIM. A camada de pronúncia
@@ -218,9 +220,9 @@ def acabamento(entrada_mp3: str, saida_mp3: str, atempo: float):
 
 def main():
     ap = argparse.ArgumentParser(description="Narração com voz clonada (Comendo MKT)")
-    ap.add_argument("--motor", default=os.environ.get("NARRA_MOTOR", "elevenlabs"),
+    ap.add_argument("--motor", default=os.environ.get("NARRA_MOTOR", "fish"),
                     choices=["elevenlabs", "fish"],
-                    help="motor de voz (padrão: elevenlabs; ou NARRA_MOTOR no ambiente)")
+                    help="motor de voz (padrão: fish; ou NARRA_MOTOR no ambiente)")
     ap.add_argument("--modelo-fish", default=FISH_MODELO,
                     help=f"modelo do Fish Audio (padrão: {FISH_MODELO})")
     ap.add_argument("--listar-vozes", action="store_true",
