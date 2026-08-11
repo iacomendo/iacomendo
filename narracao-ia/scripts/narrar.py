@@ -77,7 +77,9 @@ TONS_FISH = {
     "media":     {"temperature": 0.70, "top_p": 0.70},
     "calma":     {"temperature": 0.60, "top_p": 0.70},
 }
-FISH_MODELO = "s1"          # s1 | s2-pro | s2.1-pro | s2.1-pro-free
+FISH_MODELO = os.environ.get("FISH_MODELO", "s2.1-pro-free")
+# s2.1-pro-free funciona SEM crédito de API; s1/s2-pro/s2.1-pro exigem saldo
+# (o crédito de API do Fish é separado do crédito da plataforma).
 FISH_API = "https://api.fish.audio/v1/tts"
 
 # ---------------------------------------------------------------------------
